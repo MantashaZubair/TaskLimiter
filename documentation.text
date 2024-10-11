@@ -1,0 +1,91 @@
+Project Structure:
+
+app.js (Main file): This is the entry point of the application, where the Express server is initialized and routes are connected.
+routes/task.js: Defines the routes for creating and fetching tasks.
+controllers/task.js: Contains the logic for handling incoming requests (create and get tasks).
+services/task.js: Implements the service layer responsible for interacting with the MongoDB database.
+models/task.js: Defines the MongoDB schema and model for tasks.
+middleware/limitingMiddleware.js: Implements rate-limiting middleware and a queue system for tasks.
+config/db.js: Handles the connection to the MongoDB database.
+
+__________________________________________________________________________________________________________________________
+Features 
+
+1:Task Creation and Retrieval:
+
+POST /api/v1/task: Creates a new task. A user can submit a task, which is queued if the rate limit is exceeded.
+GET /api/v1/task: Retrieves a list of all tasks from the database.
+
+
+
+2:Rate Limiting:
+
+The API uses express-rate-limit to enforce rate limits on the /task endpoint.
+Per Second Limiter: Allows only 1 request per second.
+Per Minute Limiter: Allows up to 20 requests per minute.
+If the rate limit is exceeded, tasks are queued for processing and users are notified that their tasks will be processed later.
+
+
+3:Task Queueing:
+
+When the rate limit is exceeded, the tasks are stored in a queue per user. The queue is processed one task at a time for each user to ensure orderly task handling.
+
+__________________________________________________________________________________________________________________
+Middleware
+
+
+The project uses two rate-limiting middleware functions:
+
+perSecondLimiter: Limits to 1 request per second.
+perMinuteLimiter: Limits to 20 requests per minute.
+Both limiters utilize a handler function that queues tasks when the rate limit is exceeded, ensuring that tasks are eventually processed, even when a user sends too many requests.
+const perSecondlimiter = rateLimit({
+	windowMs: 1000, // 1 second window
+	limit: 1, // limit of 1 request per second
+	skipFailedRequests: true,
+	handler: handlerFunction // Queue the task if the limit is exceeded
+});
+
+const perMinutelimiter = rateLimit({
+	windowMs: 60 * 1000, // 1 minute window
+	limit: 20, // limit of 20 requests per minute
+	skipFailedRequests: true,
+	handler: handlerFunction // Queue the task if the limit is exceeded
+});
+
+__________________________________________________________________________________________________________________
+
+Database
+
+
+The project uses MongoDB as the database and Mongoose as the ODM (Object Data Modeling) library. A simple task schema is defined in models/task.js:
+const taskSchema = new mongoose.Schema({
+    task: { type: String },
+    UserId: { type: String, default: "123" },
+    createdAt: { type: Date, default: Date.now }
+}, { timestamps: true });
+
+________________________________________________________________________________________________________________
+
+Task Queueing and Processing
+
+When a user exceeds the rate limit, their tasks are pushed into a queue. The system processes tasks sequentially using a setTimeout function, simulating a delay between tasks to ensure proper handling:
+const handlerFunction = (req, res, next) => {
+    const userId = req.body.userId;
+    const task = req.body.task;
+    
+    if (!taskQueue[userId]) {
+        taskQueue[userId] = [];
+    }
+
+    taskQueue[userId].push(task);
+    console.log(`Task queued for user ${userId}: ${task}`);
+
+    if (taskQueue[userId].length === 1) {
+        taskServicesInstance.processQueuedTasks(userId, taskQueue);
+    }
+
+    res.status(429).json({
+        message: 'Rate limit exceeded. Task has been queued and will be processed later.'
+    });
+};
